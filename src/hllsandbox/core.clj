@@ -1,4 +1,12 @@
-(ns hllsandbox.core (:gen-class))
+(ns hllsandbox.core
+  (:import
+    [com.carrotsearch.hppc BitMixer]
+    [org.elasticsearch.common.util BigArrays ByteArray ByteUtils IntArray]
+    [java.util HashSet]
+    [org.apache.lucene.util BytesRef LongBitSet]
+    [org.apache.lucene.util.packed PackedInts]
+    [org.elasticsearch.search.aggregations.metrics.cardinality HyperLogLogPlusPlus])
+  (:gen-class))
 
 ;; Notes from reading HyperLogLogPlusPlus.java from Elasticsearch:
 ;;
@@ -46,12 +54,17 @@
 (defn make-devices [n]
   (for [i (take n (range))] (Device. (make-uuid))))
 
+(defn make-hll [p]
+    (HyperLogLogPlusPlus. p BigArrays/NON_RECYCLING_INSTANCE 0))
+
 (defn -main [& args]
   (let [devices (make-devices 100)]
-    (println "HLLs built")
+    (println "HLL simulation built")
     (println (count devices))
-    (println (first devices))
+    (println (take 10 devices))
     (println (HLL. "hll_v1" "3aFde4" 14))
     (println (HLL. "lc_v1"  "4bGeF5" 14))
+    (println "Instantiating real ES HyperLogLogPlusPlus")
+    (println (.cardinality (make-hll 14) 0))
   )
 )
