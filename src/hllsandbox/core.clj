@@ -53,15 +53,16 @@
 
 ;; Make a bunch of `Device` records
 (defn make-devices [n]
-  (for [i (take n (range))] (Device. (make-uuid))))
+  (for [i (take n (range))]
+    (Device. (make-uuid))))
 
-(defn make-hll [p]
+(defn hll-new [p]
     (HyperLogLogPlusPlus. p BigArrays/NON_RECYCLING_INSTANCE 0))
 
 (defn str2bytes [s]
   ;; in Java:
   ;; BytesRef bytes = new BytesRef(value.toString());
-  (BytesRef. s))
+  (BytesRef. (str s)))
 
 (defn bytes2hash [b]
   ;; in Java:
@@ -76,12 +77,24 @@
   ))
 )
 
-
 (defn bitmix [uuid]
   (BitMixer/mix64 uuid))
 
+(defn hll-collect [hll item]
+  (let [bytes (str2bytes item)
+        hash  (bytes2hash bytes)
+        mix   (bitmix hash)]
+    ;;(println item)
+    ;;(println bytes)
+    ;;(println mix)
+    (.collect hll 0 mix)
+    hll)
+)
+
 (defn -main [& args]
-  (let [devices (make-devices 100)]
+  (let [devices (make-devices 100)
+        hll (hll-new 14)
+        ]
     (println "HLL simulation built; device count:")
     (println (count devices))
     (println)
@@ -93,14 +106,8 @@
     (println (HLL. "lc_v1"  "4bGeF5" 14))
     (println)
     (println "Instantiating real ES HyperLogLogPlusPlus")
-    (println (.cardinality (make-hll 14) 0))
-    (let [hll   (make-hll 14)
-          uuid  (.uuid (first devices))
-          bytes (str2bytes uuid)
-          hash  (bytes2hash bytes)
-          mix   (bitmix hash)]
-      (.collect hll 0 mix)
-      (println (.cardinality hll 0))
-    )
+    (println "Cardinality of an empty HLL:" (.cardinality (hll-new 14) 0))
+    (doall (map (partial hll-collect hll) (take 100 (range))))
+    (println "Cardinality with 100 offered items: " (.cardinality hll 0))
   )
 )
