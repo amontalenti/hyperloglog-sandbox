@@ -2,6 +2,7 @@
   (:import
     [com.carrotsearch.hppc BitMixer]
     [org.elasticsearch.common.util BigArrays ByteArray ByteUtils IntArray]
+    [org.elasticsearch.common.hash MurmurHash3 MurmurHash3$Hash128]
     [java.util HashSet]
     [org.apache.lucene.util BytesRef LongBitSet]
     [org.apache.lucene.util.packed PackedInts]
@@ -57,14 +58,49 @@
 (defn make-hll [p]
     (HyperLogLogPlusPlus. p BigArrays/NON_RECYCLING_INSTANCE 0))
 
+(defn str2bytes [s]
+  ;; in Java:
+  ;; BytesRef bytes = new BytesRef(value.toString());
+  (BytesRef. s))
+
+(defn bytes2hash [b]
+  ;; in Java:
+  ;; hash = MurmurHash3.hash128(bytes.bytes, bytes.offset,
+  ;;   bytes.length, 0, new MurmurHash3.Hash128()).h1;
+  (.h1 (MurmurHash3/hash128
+    (.bytes b)
+    (.offset b)
+    (.length b)
+    0
+    (MurmurHash3$Hash128.)
+  ))
+)
+
+
+(defn bitmix [uuid]
+  (BitMixer/mix64 uuid))
+
 (defn -main [& args]
   (let [devices (make-devices 100)]
-    (println "HLL simulation built")
+    (println "HLL simulation built; device count:")
     (println (count devices))
-    (doall (map println (take 10 devices)))
+    (println)
+    (println "Showing some devices:")
+    (doall (map println (take 5 devices)))
+    (println)
+    (println "Showing serialization format:")
     (println (HLL. "hll_v1" "3aFde4" 14))
     (println (HLL. "lc_v1"  "4bGeF5" 14))
+    (println)
     (println "Instantiating real ES HyperLogLogPlusPlus")
     (println (.cardinality (make-hll 14) 0))
+    (let [hll   (make-hll 14)
+          uuid  (.uuid (first devices))
+          bytes (str2bytes uuid)
+          hash  (bytes2hash bytes)
+          mix   (bitmix hash)]
+      (.collect hll 0 mix)
+      (println (.cardinality hll 0))
+    )
   )
 )
