@@ -61,7 +61,7 @@
   (let [devices (make-devices 100)]
     (println "HLL simulation built")
     (println (count devices))
-    (println (take 10 devices))
+    (doall (map println (take 10 devices)))
     (println (HLL. "hll_v1" "3aFde4" 14))
     (println (HLL. "lc_v1"  "4bGeF5" 14))
     (println "Instantiating real ES HyperLogLogPlusPlus")
