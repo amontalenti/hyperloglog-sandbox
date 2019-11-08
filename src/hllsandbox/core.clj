@@ -1,58 +1,42 @@
 (ns hllsandbox.core
   (:import
-    [com.carrotsearch.hppc BitMixer]
-    [org.elasticsearch.common.util BigArrays ByteArray ByteUtils IntArray]
-    [org.elasticsearch.common.hash MurmurHash3 MurmurHash3$Hash128]
     [java.util HashSet]
     [java.nio ByteBuffer]
     [org.apache.lucene.util BytesRef LongBitSet]
     [org.apache.lucene.util.packed PackedInts]
+    [com.carrotsearch.hppc BitMixer]
+    [org.elasticsearch.common.util BigArrays ByteArray ByteUtils IntArray]
+    [org.elasticsearch.common.hash MurmurHash3 MurmurHash3$Hash128]
     [org.elasticsearch.search.aggregations.metrics.cardinality HyperLogLogPlusPlus]
     )
   (:require [clojure.reflect :as cr]
             [clojure.pprint :as pp])
   (:gen-class))
 
-;; Notes from reading HyperLogLogPlusPlus.java from Elasticsearch:
-;;
-;; - Precision min/max is 4 - 18
-;; - There are also "thresholds" which provide a convenience over
-;;   the precision values; the set looks like [10, 20, ..., 350000]
-;;   and they map to the precision values.
-;; - When the HLL cardinality is small, "linear counting" is used,
-;;   but with a small modification of using a hash table for LC.
-;; - According to acoyler analysis, at p = 14, linear counting performs
-;;   better for cardinalities between 0 - 50k, and then HLL starts to
-;;   perform much better, especially with bias correction. See this:
-;;   https://adriancolyer.files.wordpress.com/2016/03/hll-fig-3.png
-;;
-;; To quote Adrian: "The end result is that for an important range
-;; of cardinalities -- roughly between 18k and 61k p = 14, the
-;; error is much less than that of the original HyperLogLog." ...
-;; "Notice that linear counting still beats the bias-corrected estimate
-;; for small n. For precision 14 (p = 14) the error curves intersect at
-;; around n = 11.5k. Therefore linear counting is used below 11.5k, and
-;; bias corrected raw estimates above."
-
-;; Represents an HLL, with `sketch` being the serialized form,
-;; `binformat` being the binary format used, and `precision` being
-;; the precision of the HLL, which affects its space usage and
-;; its serialization format.
-;;
-;; Example values:
-;; - binformat: "hll_v1", "lc_v1"
-;; - sketch: "f3e4d5"
-;; - precision: 14
-;;
 (defrecord HLL
+  ;; Represents an HLL, with `sketch` being the serialized form,
+  ;; `binformat` being the binary format used, and `precision` being
+  ;; the precision of the HLL, which affects its space usage and
+  ;; its serialization format.
+  ;;
+  ;; Example values:
+  ;; - binformat: "hll_v1", "lc_v1"
+  ;; - sketch: "f3e4d5"
+  ;; - precision: 14
+  ;;
+  ;; The `sketch` part is obviously the most interesting. In case of
+  ;; HLL, it'll likely be bitpacked registers representing the max
+  ;; run of zeros in the hashed values' bitstrings. In case of LC,
+  ;; it'll be a bitpacked "linear count" of the hashed values. I'm
+  ;; not sure if the sketch should have more structure than this.
   [binformat sketch precision])
 
-;; Represents a device
 (defrecord Device
+  ;; Represents a device
   [uuid])
 
-;; Generate a UUID as a string
 (defn make-uuid []
+  ;; Generate a UUID as a string
   (.toString (java.util.UUID/randomUUID)))
 
 ;; Make a bunch of `Device` records
@@ -61,7 +45,8 @@
     (Device. (make-uuid))))
 
 (defn hll-new [p]
-    (HyperLogLogPlusPlus. p BigArrays/NON_RECYCLING_INSTANCE 0))
+  ;; Construct an HLL using the main Java class
+  (HyperLogLogPlusPlus. p BigArrays/NON_RECYCLING_INSTANCE 0))
 
 (defn str2bytes [s]
   ;; in Java:
@@ -106,9 +91,10 @@
   mix))
 
 (defn hll-collect [hll item]
+  ;; Collects an item into a given hll; can use with `(partial hll)`
   (.collect hll 0 (hll-bits item)))
 
-
+;; Reflection utility to print a class's members
 (defn print-class-table [obj]
   (println (->> obj cr/reflect :members pp/print-table)))
 
