@@ -6,4 +6,4 @@
   :dependencies [[org.clojure/clojure "1.10.1"]
                  [org.elasticsearch/elasticsearch "6.8.4"]
                  ]
-  :main hllsandbox.core)
+  :main hllsandbox.clojonic)
