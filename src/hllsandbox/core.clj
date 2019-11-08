@@ -4,9 +4,13 @@
     [org.elasticsearch.common.util BigArrays ByteArray ByteUtils IntArray]
     [org.elasticsearch.common.hash MurmurHash3 MurmurHash3$Hash128]
     [java.util HashSet]
+    [java.nio ByteBuffer]
     [org.apache.lucene.util BytesRef LongBitSet]
     [org.apache.lucene.util.packed PackedInts]
-    [org.elasticsearch.search.aggregations.metrics.cardinality HyperLogLogPlusPlus])
+    [org.elasticsearch.search.aggregations.metrics.cardinality HyperLogLogPlusPlus]
+    )
+  (:require [clojure.reflect :as cr]
+            [clojure.pprint :as pp])
   (:gen-class))
 
 ;; Notes from reading HyperLogLogPlusPlus.java from Elasticsearch:
@@ -78,18 +82,35 @@
 )
 
 (defn bitmix [uuid]
+  ;; "Bit Mixing" is necessary due to something called
+  ;; "the avalanche effect", which is described here:
+  ;; http://zimbry.blogspot.com/2011/09/better-bit-mixing-improving-on.html
   (BitMixer/mix64 uuid))
 
-(defn hll-collect [hll item]
+(defn long2bytes [l]
+  ;; Use ByteBuffer to convert a `long` to a `byte[]`, which we then
+  ;; convert into a `vector` for readability
+  (vec
+    (.array (.putLong (ByteBuffer/allocate (/ Long/SIZE Byte/SIZE)) l))))
+
+(defn hll-bits [item]
+  ;; Converts `item` string into murmur3-hashed and bitmixed bits,
+  ;; making it ready for HLL collection.
   (let [bytes (str2bytes item)
         hash  (bytes2hash bytes)
         mix   (bitmix hash)]
-    ;;(println item)
-    ;;(println bytes)
-    ;;(println mix)
-    (.collect hll 0 mix)
-    hll)
-)
+    ;(println item)
+    ;(println bytes)
+    ;(println mix)
+    ;(println (long2bytes mix))
+  mix))
+
+(defn hll-collect [hll item]
+  (.collect hll 0 (hll-bits item)))
+
+
+(defn print-class-table [obj]
+  (println (->> obj cr/reflect :members pp/print-table)))
 
 (defn -main [& args]
   (let [devices (make-devices 100)
@@ -99,11 +120,11 @@
     (println (count devices))
     (println)
     (println "Showing some devices:")
-    (doall (map println (take 5 devices)))
+    (doall (map pp/pprint (take 5 devices)))
     (println)
     (println "Showing serialization format:")
-    (println (HLL. "hll_v1" "3aFde4" 14))
-    (println (HLL. "lc_v1"  "4bGeF5" 14))
+    (pp/pprint (HLL. "hll_v1" "3aFde4" 14))
+    (pp/pprint (HLL. "lc_v1"  "4bGeF5" 14))
     (println)
     (println "Instantiating real ES HyperLogLogPlusPlus")
     (println "Cardinality of an empty HLL:" (.cardinality (hll-new 14) 0))
