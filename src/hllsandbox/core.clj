@@ -2,15 +2,20 @@
   (:import
     [java.util HashSet]
     [java.nio ByteBuffer]
+    [java.io ByteArrayInputStream ByteArrayOutputStream]
     [org.apache.lucene.util BytesRef LongBitSet]
     [org.apache.lucene.util.packed PackedInts]
     [com.carrotsearch.hppc BitMixer]
     [org.elasticsearch.common.util BigArrays ByteArray ByteUtils IntArray]
     [org.elasticsearch.common.hash MurmurHash3 MurmurHash3$Hash128]
+    [org.elasticsearch.common.io.stream InputStreamStreamInput OutputStreamStreamOutput]
     [org.elasticsearch.search.aggregations.metrics.cardinality HyperLogLogPlusPlus]
     )
   (:require [clojure.reflect :as cr]
-            [clojure.pprint :as pp])
+            [clojure.pprint :as pp]
+            [clojure.string :as string]
+            [clojure.data.codec.base64 :as b64]
+            )
   (:gen-class))
 
 (defrecord HLL
@@ -31,18 +36,17 @@
   ;; not sure if the sketch should have more structure than this.
   [binformat sketch precision])
 
-(defrecord Device
-  ;; Represents a device
-  [uuid])
-
-(defn make-uuid []
+(defn random-uuid []
   ;; Generate a UUID as a string
-  (.toString (java.util.UUID/randomUUID)))
+  (str (java.util.UUID/randomUUID)))
 
-;; Make a bunch of `Device` records
-(defn make-devices [n]
+(defn make-uuids [n]
   (for [i (take n (range))]
-    (Device. (make-uuid))))
+    (random-uuid)))
+
+(defn make-uuids [n]
+  ;; cleaner version of make-uuids
+  (take n (repeatedly random-uuid)))
 
 (defn hll-new [p]
   ;; Construct an HLL using the main Java class
@@ -94,27 +98,48 @@
   ;; Collects an item into a given hll; can use with `(partial hll)`
   (.collect hll 0 (hll-bits item)))
 
-;; Reflection utility to print a class's members
+(defn hll-serialize [hll]
+  ;; Serialize an HLL into a byte[]
+  (let [baos (ByteArrayOutputStream.)
+        osso (OutputStreamStreamOutput. baos)]
+    (.writeTo hll 0 osso)
+    (.toByteArray baos)))
+
+(defn hll-deserialize [buf]
+  ;; Deserialize a byte[] into an HLL
+  (let [bais (ByteArrayInputStream. buf)
+        issi (InputStreamStreamInput. bais)]
+    (HyperLogLogPlusPlus/readFrom issi BigArrays/NON_RECYCLING_INSTANCE)))
+
 (defn print-class-table [obj]
+  ;; Reflection utility to print a class's members
+  (println (macroexpand '(->> obj cr/reflect :members pp/print-table)))
   (println (->> obj cr/reflect :members pp/print-table)))
 
 (defn -main [& args]
-  (let [devices (make-devices 100)
+  (let [devices (make-uuids 10000)
         hll (hll-new 14)
         ]
-    (println "HLL simulation built; device count:")
+    (println "HLL simulation built; device count =>")
     (println (count devices))
     (println)
-    (println "Showing some devices:")
+    (println "Showing some devices =>")
     (doall (map pp/pprint (take 5 devices)))
     (println)
-    (println "Showing serialization format:")
+    (println "Showing 'mock' serialization format =>")
     (pp/pprint (HLL. "hll_v1" "3aFde4" 14))
     (pp/pprint (HLL. "lc_v1"  "4bGeF5" 14))
     (println)
-    (println "Instantiating real ES HyperLogLogPlusPlus")
+    (println "Instantiating real ES HyperLogLogPlusPlus =>")
     (println "Cardinality of an empty HLL:" (.cardinality (hll-new 14) 0))
-    (doall (map (partial hll-collect hll) (take 100 (range))))
-    (println "Cardinality with 100 offered items: " (.cardinality hll 0))
+    (doall (map (partial hll-collect hll) devices))
+    (println "Cardinality with" (count devices) "offered items: " (.cardinality hll 0))
+    (println)
+    (println "Testing Ser and DeSer =>")
+    (let [ser (hll-serialize hll)
+          deser (hll-deserialize ser)]
+        (println (count ser) "serialized bytes")
+        (println (.cardinality deser 0) "deserialized cardinality")
+    )
   )
 )
